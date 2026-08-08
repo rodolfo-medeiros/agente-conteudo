@@ -1,0 +1,11 @@
+credentials.json
+oauth_credentials.json
+.token_cache.json
+.env
+.venv
+__pycache__
+resumo_IA_*.txt
+chroma_db_gemini/
+system_prompt_token.md
+knowledge_base/
+tests/
