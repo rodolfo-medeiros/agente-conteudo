@@ -433,35 +433,6 @@ def obter_modelo_chat():
 
     return modelo_config
 
-
-def consultar_IA(vector_store, pergunta):
-    """Consulta o modelo LLM com os dados resgatados do banco vetorial."""
-    print("Consultando a base de conhecimento com Gemini...")
-
-    system_prompt = carregar_system_prompt()
-
-    llm = ChatGoogleGenerativeAI(model=obter_modelo_chat(), temperature=0.1)
-
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        ("system", "Contexto: \n{context}"),
-        ("human", "{input}")
-    ])
-
-    question_answer_chain = create_stuff_documents_chain(llm, prompt)
-    retriever = vector_store.as_retriever(search_kwargs={"k": config.RETRIEVAL_K})
-    rag_chain = create_retrieval_chain(retriever, question_answer_chain)
-
-    resposta = rag_chain.invoke({"input": pergunta})
-
-    # Mostra quais fontes foram usadas
-    if "context" in resposta:
-        fontes = set(doc.metadata.get("source_pdf", "desconhecido") for doc in resposta["context"])
-        print(f"Fontes consultadas: {', '.join(fontes)}")
-
-    return resposta["answer"]
-
-
 def consultar_IA_com_retry(
         vector_store, pergunta, tentativas_maximas=3, espera_segundos=5
     ):

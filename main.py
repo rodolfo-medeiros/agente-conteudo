@@ -35,9 +35,10 @@ def main():
     "exatamente nesse formato, sem negrito, sem emojis adicionais nessa linha, "
     "e com o conteúdo da semana logo abaixo. Não use '####', '###' ou '**' "
     "no cabeçalho da semana."
+    
 )
 
-    resumo = fn.consultar_IA(vectorstore, comando)
+    resumo = fn.consultar_IA_com_retry(vectorstore,comando,tentativas_maximas=3,espera_segundos=5)
     
     # Salva resumo localmente como backup/teste
     nome_arquivo_local = f"resumo_IA_{data_hoje}.txt"
