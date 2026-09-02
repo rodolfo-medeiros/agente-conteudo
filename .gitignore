@@ -15,3 +15,4 @@ tests/
 Thumbs.db
 Desktop.ini
 .DS_Store
+output_psd/
