@@ -108,114 +108,7 @@ def extrair_semanas(resumo):
     return semanas
 
 
-def gerar_pdf_semana(titulo, conteudo, caminho_saida):
-    """Gera um PDF de conteúdo contínuo (estilo documento) com reportlab."""
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import cm
-    from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 
-    os.makedirs(os.path.dirname(caminho_saida) or ".", exist_ok=True)
-
-    doc = SimpleDocTemplate(
-        caminho_saida,
-        pagesize=A4,
-        rightMargin=2 * cm,
-        leftMargin=2 * cm,
-        topMargin=2 * cm,
-        bottomMargin=2 * cm,
-        title=titulo,
-        author="Agente de Conteúdo Token",
-    )
-
-    estilos = getSampleStyleSheet()
-
-    estilo_titulo = ParagraphStyle(
-        "TituloSemana",
-        parent=estilos["Title"],
-        fontSize=18,
-        leading=22,
-        spaceAfter=16,
-        textColor=colors.HexColor("#1a1a2e"),
-    )
-    estilo_h2 = ParagraphStyle(
-        "H2Semana",
-        parent=estilos["Heading2"],
-        fontSize=14,
-        leading=18,
-        spaceBefore=12,
-        spaceAfter=6,
-        textColor=colors.HexColor("#16213e"),
-    )
-    estilo_h3 = ParagraphStyle(
-        "H3Semana",
-        parent=estilos["Heading3"],
-        fontSize=12,
-        leading=16,
-        spaceBefore=10,
-        spaceAfter=5,
-        textColor=colors.HexColor("#0f3460"),
-    )
-    estilo_h4 = ParagraphStyle(
-        "H4Semana",
-        parent=estilos["Heading4"],
-        fontSize=11,
-        leading=15,
-        spaceBefore=8,
-        spaceAfter=4,
-        textColor=colors.HexColor("#333333"),
-    )
-    estilo_corpo = ParagraphStyle(
-        "CorpoSemana",
-        parent=estilos["BodyText"],
-        fontSize=10.5,
-        leading=14,
-        spaceAfter=6,
-    )
-    estilo_bullet = ParagraphStyle(
-        "BulletSemana",
-        parent=estilos["BodyText"],
-        fontSize=10.5,
-        leading=14,
-        leftIndent=16,
-        bulletIndent=6,
-        spaceAfter=4,
-    )
-
-    elementos = [
-        Paragraph(_escape_markdown(titulo), estilo_titulo),
-        Spacer(1, 0.3 * cm),
-    ]
-
-    for linha in conteudo.splitlines():
-        linha_limpa = linha.strip()
-
-        if not linha_limpa:
-            elementos.append(Spacer(1, 0.2 * cm))
-            continue
-
-        if linha_limpa.startswith("#### "):
-            elementos.append(Paragraph(_escape_markdown(linha_limpa[5:]), estilo_h4))
-        elif linha_limpa.startswith("### "):
-            elementos.append(Paragraph(_escape_markdown(linha_limpa[4:]), estilo_h3))
-        elif linha_limpa.startswith("## "):
-            elementos.append(Paragraph(_escape_markdown(linha_limpa[3:]), estilo_h2))
-        elif linha_limpa.startswith("# "):
-            elementos.append(Paragraph(_escape_markdown(linha_limpa[2:]), estilo_h2))
-        elif linha_limpa.startswith(("- ", "* ")):
-            texto_bullet = linha_limpa[2:]
-            elementos.append(
-                Paragraph(_escape_markdown(texto_bullet), estilo_bullet, bulletText="•")
-            )
-        elif linha_limpa == "---":
-            elementos.append(Spacer(1, 0.3 * cm))
-        else:
-            elementos.append(Paragraph(_escape_markdown(linha_limpa), estilo_corpo))
-
-    doc.build(elementos)
-    print(f"PDF gerado: {caminho_saida}")
-    return caminho_saida
 
 
 # ============================================================
@@ -268,9 +161,40 @@ def conectar_google_drive():
         return None
 
 
+
+
 def criar_pasta_drive(service, nome_pasta, id_pasta_pai=None):
+    def buscar_pasta_drive(service, nome_pasta, id_pasta_pai=None):
+        """Busca uma pasta pelo nome dentro da pasta pai (retorna o ID ou None)."""
+        query = "mimeType='application/vnd.google-apps.folder' and trashed=false"
+        if id_pasta_pai:
+            query += f" and '{id_pasta_pai}' in parents"
+        query += f" and name = '{nome_pasta}'"
+        try:
+            resposta = (
+                service.files()
+                .list(q=query, fields="files(id, name)", pageSize=1)
+                .execute()
+            )
+            arquivos = resposta.get("files", [])
+            if arquivos:
+                return arquivos[0]["id"]
+        except HttpError as e:
+            print(f"Erro ao buscar pasta: {e}")
+        return None
+
     """Cria uma pasta no Google Drive."""
     print(f"Criando pasta '{nome_pasta}' no Google Drive...")
+
+
+
+    # Reaproveita a pasta se ela já existir (evita duplicatas em re-execuções)
+    id_existente = buscar_pasta_drive(service, nome_pasta, id_pasta_pai)
+    if id_existente:
+        print(f"Pasta '{nome_pasta}' já existe; reaproveitando (ID: {id_existente}).")
+        return id_existente
+
+
 
     # No google Drive pastas são arquivos com mimeType específico
     metadata_pasta = {
@@ -290,6 +214,31 @@ def criar_pasta_drive(service, nome_pasta, id_pasta_pai=None):
     except HttpError as e:
         print(f"Erro ao criar pasta: {e}")
         return None
+
+
+def upload_arquivo_drive(service, caminho_local, nome_arquivo, mime_type, id_pasta_destino):
+    """Faz upload de um arquivo local (ex: PSD do carrossel) para uma pasta do Google Drive."""
+
+    metadata_arquivo = {
+        'name': nome_arquivo,
+        'parents': [id_pasta_destino],
+    }
+
+    media = MediaFileUpload(caminho_local, mimetype=mime_type, resumable=False)
+
+    try:
+        arquivo = service.files().create(
+            body=metadata_arquivo,
+            media_body=media,
+            fields='id, webViewLink'
+        ).execute()
+        print(f"Arquivo '{nome_arquivo}' enviado com sucesso!")
+        print(f"Link de acesso: {arquivo.get('webViewLink')}")
+        return arquivo.get('id')
+    except HttpError as e:
+        print(f"Erro ao enviar arquivo: {e}")
+        return None
+
 
 
 def criar_documento_resumo(service, nome_arquivo, conteudo_texto, id_pasta_destino):
@@ -321,78 +270,104 @@ def criar_documento_resumo(service, nome_arquivo, conteudo_texto, id_pasta_desti
         return None
 
 
-def upload_arquivo_drive(service, caminho_local, nome_arquivo, mime_type, id_pasta_destino):
-    """Faz upload de um arquivo local (ex: PDF) para uma pasta do Google Drive."""
-    metadata_arquivo = {
-        'name': nome_arquivo,
-        'parents': [id_pasta_destino],
-    }
-
-    media = MediaFileUpload(caminho_local, mimetype=mime_type, resumable=False)
-
-    try:
-        arquivo = service.files().create(
-            body=metadata_arquivo,
-            media_body=media,
-            fields='id, webViewLink'
-        ).execute()
-        print(f"Arquivo '{nome_arquivo}' enviado com sucesso!")
-        print(f"Link de acesso: {arquivo.get('webViewLink')}")
-        return arquivo.get('id')
-    except HttpError as e:
-        print(f"Erro ao enviar arquivo: {e}")
-        return None
-
 
 # ============================================================
 # INGESTÃO E PROCESSAMENTO COM RAG (Lang Chain + Gemini)
 # ============================================================
 
 def obter_ou_criar_vectorstore(caminho_pasta="knowledge_base"):
-    """
-    OTIMIZAÇÃO CRUCIAL: Verifica se o ChromaDB já existe no disco.
-    Se sim, carrega os vetores existentes (R$ 0 em API e 0s de espera).
-    Se não, processa o PDF e salva no disco.
+    """Carrega o banco vetorial sincronizando com os PDFs da knowledge_base.
+
+    - Banco inexistente/vazio -> indexa todos os PDFs da pasta.
+    - Banco existente -> sincroniza: remove PDFs apagados, reindexa
+      alterados (por hash de conteúdo) e mantém os inalterados sem custo.
     """
     embeddings = GoogleGenerativeAIEmbeddings(model=obter_modelo_embedding())
 
-    # Se a pasta do ChromaDB existir e não estiver vazia, carrega do disco
-    if os.path.exists(config.PASTA_CHROMA) and os.listdir(config.PASTA_CHROMA):
-        print("Carregando banco vetorial do disco...")
-        return Chroma(
+    pdfs_atuais = {
+        os.path.basename(caminho): caminho
+        for caminho in glob.glob(os.path.join(caminho_pasta, "*.pdf"))
+    }
+
+    banco_existe = os.path.exists(config.PASTA_CHROMA) and os.listdir(config.PASTA_CHROMA)
+
+    if not banco_existe:
+        print("Banco vetorial não encontrado. Indexando a knowledge_base...")
+        vector_store = Chroma(
+            embedding_function=embeddings,
             persist_directory=config.PASTA_CHROMA,
-            embedding_function=embeddings
         )
+        for nome, caminho in sorted(pdfs_atuais.items()):
+            _indexar_pdf(vector_store, caminho, nome, _hash_arquivo(caminho))
+        print("✅ Banco vetorial criado com sucesso!")
+        return vector_store
 
-    # processa todos os pdf´s na pasta
-    pdfs = glob.glob(os.path.join(caminho_pasta, "*.pdf"))
-    print(f"Encontrados {len(pdfs)} arquivos PDF na pasta '{caminho_pasta}' para processamento.")
-
-    todos_chunks = []
-
-    for caminho_pdf in pdfs:
-        nome_arquivo = os.path.basename(caminho_pdf)
-        print(f"Processando: {nome_arquivo}")
-
-        loader = PyMuPDFLoader(caminho_pdf)
-        documentos = loader.load()
-
-        for doc in documentos:
-            doc.metadata["source_pdf"] = nome_arquivo  # Adiciona o nome do PDF como metadado
-
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=config.CHUNK_SIZE, chunk_overlap=config.CHUNK_OVERLAP
-        )
-        chunks = text_splitter.split_documents(documentos)
-        todos_chunks.extend(chunks)
-
-    print("Gerando embeddings e salvando no banco vetorial...")
-    vector_store = Chroma.from_documents(
-        documents=todos_chunks,
-        embedding=embeddings,
-        persist_directory=config.PASTA_CHROMA
+    print("Carregando banco vetorial do disco e sincronizando com a pasta...")
+    vector_store = Chroma(
+        persist_directory=config.PASTA_CHROMA,
+        embedding_function=embeddings,
     )
+
+    # O que já está indexado: {nome_do_pdf: hash_do_conteudo}
+    indexados = {}
+    registro = vector_store.get(include=["metadatas"])
+    for meta in registro.get("metadatas") or []:
+        if meta and meta.get("source_pdf"):
+            indexados[meta["source_pdf"]] = meta.get("file_hash")
+
+    # 1) PDFs que saíram da pasta -> apaga do índice
+    for nome in sorted(set(indexados) - set(pdfs_atuais)):
+        print(f"🗑️ PDF removido da base, apagando do banco vetorial: {nome}")
+        _apagar_pdf_do_indice(vector_store, nome)
+
+    # 2) PDFs novos ou alterados -> (re)indexa
+    for nome, caminho in sorted(pdfs_atuais.items()):
+        hash_atual = _hash_arquivo(caminho)
+        if indexados.get(nome) == hash_atual:
+            continue  # inalterado: zero custo de embedding
+        if nome in indexados:
+            print(f"♻️ PDF alterado, reindexando: {nome}")
+            _apagar_pdf_do_indice(vector_store, nome)
+        else:
+            print(f"🆕 Novo PDF, indexando: {nome}")
+        _indexar_pdf(vector_store, caminho, nome, hash_atual)
+
     return vector_store
+
+
+def _hash_arquivo(caminho):
+    """MD5 do conteúdo (detecta alterações mesmo mantendo o mesmo nome)."""
+    import hashlib
+    h = hashlib.md5()
+    with open(caminho, "rb") as f:
+        for bloco in iter(lambda: f.read(1 << 20), b""):
+            h.update(bloco)
+    return h.hexdigest()
+
+
+def _apagar_pdf_do_indice(vector_store, nome_pdf):
+    """Apaga todos os chunks de um PDF do banco vetorial."""
+    ids = vector_store.get(where={"source_pdf": nome_pdf}).get("ids", [])
+    if ids:
+        vector_store.delete(ids)
+
+
+def _indexar_pdf(vector_store, caminho_pdf, nome_arquivo, hash_arquivo):
+    """Carrega, fatia e indexa um PDF com metadados de controle."""
+    loader = PyMuPDFLoader(caminho_pdf)
+    documentos = loader.load()
+
+    for doc in documentos:
+        doc.metadata["source_pdf"] = nome_arquivo
+        doc.metadata["file_hash"] = hash_arquivo
+
+    chunks = RecursiveCharacterTextSplitter(
+        chunk_size=config.CHUNK_SIZE, chunk_overlap=config.CHUNK_OVERLAP
+    ).split_documents(documentos)
+
+    vector_store.add_documents(chunks)
+    print(f"   📄 {nome_arquivo}: {len(chunks)} trechos indexados.")
+
 
 
 def carregar_system_prompt(caminho=None):

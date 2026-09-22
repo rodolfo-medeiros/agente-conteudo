@@ -1,10 +1,14 @@
 
-#importando funcoes
+
 from datetime import date, datetime
 import os
 from utils import config
 import utils.functions as fn
-from utils.roteiro import gerar_roteiro_semana, formatar_secao_roteiro
+from utils.roteiro import (
+    extrair_conteudos,
+    formatar_secao_roteiro,
+    gerar_roteiro_conteudo,
+)
 from utils.gerador_psd import gerar_psd_carrossel
 
 
@@ -49,44 +53,69 @@ def main():
         print("❌ Não foram encontradas semanas no resumo. Finalizando.")
         return
 
-    # Passo 2 - Gera o roteiro do carrossel de cada semana (antes de publicar)
+    # Passo 2 - Extrai os 3 conteúdos de cada semana e gera 1 roteiro por conteúdo
     for semana in semanas:
-        try:
-            roteiro_texto, slides = gerar_roteiro_semana(
-                semana["conteudo"], vectorstore
-            )
-            semana["roteiro_texto"] = roteiro_texto
-            semana["slides"] = slides
-        except Exception as e:
+        semana["conteudos"] = extrair_conteudos(semana["conteudo"])
+
+    total_conteudos = sum(len(s["conteudos"]) for s in semanas)
+    print(f"🎬 {total_conteudos} conteúdos encontrados. Gerando 1 roteiro por conteúdo...")
+
+    for semana in semanas:
+        if not semana["conteudos"]:
             print(
-                f"⚠️ Falha ao gerar roteiro da Semana {semana['numero']}: {e}. "
-                "Seguindo sem roteiro nesta semana."
+                f"⚠️ Semana {semana['numero']} sem conteúdos identificáveis; "
+                "pulando roteiros desta semana."
             )
-            semana["roteiro_texto"] = None
-            semana["slides"] = None
+            continue
 
-    # Passo 3 - Monta o conteúdo final (agenda da semana + roteiro)
+        for conteudo in semana["conteudos"]:
+            try:
+                roteiro_texto, slides = gerar_roteiro_conteudo(
+                    conteudo["numero"],
+                    conteudo["editoria"],
+                    conteudo["texto"],
+                    vectorstore,
+                )
+                conteudo["roteiro_texto"] = roteiro_texto
+                conteudo["slides"] = slides
+            except Exception as e:
+                print(
+                    f"⚠️ Falha ao gerar roteiro do Conteúdo {conteudo['numero']}: {e}. "
+                    "Seguindo sem roteiro neste conteúdo."
+                )
+                conteudo["roteiro_texto"] = None
+                conteudo["slides"] = None
+
+    # Passo 3 - Conteúdo final de cada semana (agenda + roteiros dos seus conteúdos)
     for semana in semanas:
-        if semana["roteiro_texto"]:
-            semana["conteudo_final"] = (
-                semana["conteudo"]
-                + "\n\n"
-                + formatar_secao_roteiro(semana["roteiro_texto"])
-            )
-        else:
-            semana["conteudo_final"] = semana["conteudo"]
+        partes = [semana["conteudo"]]
+        for conteudo in semana["conteudos"]:
+            if conteudo.get("roteiro_texto"):
+                partes.append(
+                    formatar_secao_roteiro(
+                        conteudo["roteiro_texto"],
+                        numero_conteudo=conteudo["numero"],
+                        editoria=conteudo["editoria"],
+                    )
+                )
+        semana["conteudo_final"] = "\n\n".join(partes)
 
-    # Resumo completo = agenda inteira + roteiro de cada semana
+    # Resumo completo = agenda inteira + roteiros de todos os conteúdos
     secoes_roteiros = [
-        formatar_secao_roteiro(s["roteiro_texto"])
-        for s in semanas
-        if s["roteiro_texto"]
+        formatar_secao_roteiro(
+            c["roteiro_texto"],
+            numero_conteudo=c["numero"],
+            editoria=c["editoria"],
+        )
+        for semana in semanas
+        for c in semana["conteudos"]
+        if c.get("roteiro_texto")
     ]
     resumo_completo = resumo
     if secoes_roteiros:
         resumo_completo += "\n\n" + "\n\n".join(secoes_roteiros)
 
-    # Salva resumo localmente como backup/teste (agora com os roteiros)
+    # Salva resumo localmente como backup/teste (agenda + roteiros)
     nome_arquivo_local = f"resumo_IA_{data_hoje}.txt"
     with open(nome_arquivo_local, "w", encoding="utf-8") as f:
         f.write("=" * 80 + "\n")
@@ -123,6 +152,7 @@ def main():
         "Segunda Semana",
         "Terceira Semana",
         "Quarta Semana",
+        f"{mes_ano}-CARROSSEIS",
     ]
 
     ids_subpastas = {}
@@ -139,7 +169,7 @@ def main():
             print(f"  📁 {nome_subpasta} criada com sucesso!")
 
 
-    # Publica o resumo completo (agenda + roteiros por semana)
+    # Publica o resumo completo (agenda + roteiros de todos os conteúdos)
     if "Resumo Completo" in ids_subpastas:
         fn.criar_documento_resumo(
             service=drive_service,
@@ -149,7 +179,7 @@ def main():
 
         )
 
-    # Publica o Doc de cada semana (agenda + roteiro) - sem PDF no Drive
+    # Publica o Doc de cada semana (agenda da semana + roteiros) - sem PDF no Drive
     mapa_subpastas = {
         1: "Primeira Semana",
         2: "Segunda Semana",
@@ -174,25 +204,54 @@ def main():
             id_pasta_destino=ids_subpastas[nome_subpasta],
         )
 
-    # Passos 4 e 5 - Gera os PSDs do carrossel localmente
+    # Passos 4 e 5 - Gera os 12 PSDs localmente (um por conteúdo)
     pasta_psd = os.path.join("output_psd", mes_ano)
     os.makedirs(pasta_psd, exist_ok=True)
 
-    print("\n🎨 Gerando PSDs do carrossel (o Photoshop será aberto)...")
-    for semana in semanas:
-        if not semana["slides"]:
-            print(f"⚠️ Sem roteiro para a Semana {semana['numero']}; PSD não gerado.")
-            continue
+    id_pasta_carrosseis = ids_subpastas.get(f"{mes_ano}-CARROSSEIS")
 
-        caminho_psd = os.path.join(pasta_psd, f"Semana {semana['numero']}.psd")
-        try:
-            gerar_psd_carrossel(
-                slides=semana["slides"],
-                caminho_saida=caminho_psd,
-                titulo_documento=f"Carrossel Semana {semana['numero']}",
+    print("\n🎨 Gerando os 12 PSDs dos carrosséis (o Photoshop será aberto)...")
+    for semana in semanas:
+        for conteudo in semana["conteudos"]:
+            if not conteudo.get("slides"):
+                print(
+                    f"⚠️ Sem roteiro para o Conteúdo {conteudo['numero']}; "
+                    "PSD não gerado."
+                )
+                continue
+
+            # Nome sem acento, para segurança no COM do Photoshop
+            nome_psd = f"Conteudo {conteudo['numero']:02d}.psd"
+            caminho_psd = os.path.join(
+                pasta_psd, nome_psd
             )
-        except Exception as e:
-            print(f"❌ Erro ao gerar PSD da Semana {semana['numero']}: {e}")
+            try:
+                gerar_psd_carrossel(
+                    slides=conteudo["slides"],
+                    caminho_saida=caminho_psd,
+                    titulo_documento=f"Carrossel Conteudo {conteudo['numero']}",
+                )
+
+                # Upload dos PSD´s para a subpasta carrosseis no Drive
+                if id_pasta_carrosseis:
+                    fn.upload_arquivo_drive(
+                        service=drive_service,
+                        caminho_local=caminho_psd,
+                        nome_arquivo=nome_psd,
+                        mime_type="application/octet-stream",
+                        id_pasta_destino=id_pasta_carrosseis
+
+                    )
+
+                else:
+                    print(
+                        f"!! Pasta '{mes_ano}-CARROSSEIS' indisponível;"
+                        f"PSD do Conteúdo {conteudo['numero']} salvo só localmente."
+
+                          )
+
+            except Exception as e:
+                print(f"❌ Erro ao gerar PSD do Conteúdo {conteudo['numero']}: {e}")
 
     print("\n🏁 Finalizado!")
 
