@@ -9,8 +9,13 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_DRIVE_FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
 
 # Modelos
-GOOGLE_EMBEDDING_MODEL = os.getenv("GOOGLE_EMBEDDING_MODEL", "gemini-embedding-001")
-GOOGLE_CHAT_MODEL = os.getenv("GOOGLE_CHAT_MODEL", "gemini-2.0-flash")
+GOOGLE_EMBEDDING_MODEL = os.getenv("GOOGLE_EMBEDDING_MODEL", "")
+GOOGLE_CHAT_MODEL = os.getenv("GOOGLE_CHAT_MODEL", "")
+GOOGLE_ROTEIRO_MODEL = os.getenv("GOOGLE_ROTEIRO_MODEL", "")
+
+# Modelo de reserva dos roteiros (quando o principal estiver sobrecarregado).
+# Vazio = usa o GOOGLE_CHAT_MODEL.
+GOOGLE_ROTEIRO_MODEL_FALLBACK = os.getenv("GOOGLE_ROTEIRO_MODEL_FALLBACK", "")
 
 # Caminhos
 PASTA_CHROMA = "./chroma_db_gemini"

@@ -84,7 +84,7 @@ def gerar_psd_carrossel(slides, caminho_saida, titulo_documento="Carrossel Insta
             ps.DocumentFill.White,
         )
 
-        _criar_guias(doc)
+        _criar_guias(app)
 
         for slide in sorted(slides, key=lambda s: s["numero"])[:NUM_SLIDES]:
             _criar_grupo_slide(doc, slide)
@@ -98,13 +98,24 @@ def gerar_psd_carrossel(slides, caminho_saida, titulo_documento="Carrossel Insta
         app.preferences.rulerUnits = unidades_originais
 
 
-def _criar_guias(doc):
-    """Cria guias verticais marcando os limites dos 5 quadrantes."""
+def _criar_guias(app):
+    """Cria guias verticais nos limites dos 5 quadrantes.
+
+    Usa doJavaScript (ExtendScript) porque a coleção de guias não está
+    exposta na wrapper Python do Document (o dispatch COM direto falha
+    com 'Name guides not found').
+    """
+    jsx = (
+        "var d = app.activeDocument;"
+        f"for (var i = 1; i < {NUM_SLIDES}; i++) {{"
+        f"d.guides.add(Direction.VERTICAL, new UnitValue(i * {LARGURA_QUADRANTE}, 'px'));"
+        "}"
+    )
     try:
-        for i in range(1, NUM_SLIDES):
-            doc.guides.add(ps.Direction.Vertical, i * LARGURA_QUADRANTE)
+        app.doJavaScript(jsx)
     except Exception as e:
         print(f"⚠️ Guias não criadas (sem impacto no arquivo): {e}")
+
 
 
 def _criar_grupo_slide(doc, slide):
