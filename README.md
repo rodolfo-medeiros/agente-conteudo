@@ -14,7 +14,7 @@ time de design finalizar e postar no Instagram.
 
 ## ⚙️ O pipeline (um comando, 5 etapas)
 
-```
+
 python main.py
    │
    ├─ 1. AGENDA ────── RAG (ChromaDB + embeddings Gemini) → agenda mensal:
