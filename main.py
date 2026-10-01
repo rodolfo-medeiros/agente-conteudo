@@ -2,6 +2,8 @@
 
 from datetime import date, datetime
 import os
+import re
+import json
 from utils import config
 import utils.functions as fn
 from utils.roteiro import (
@@ -11,6 +13,12 @@ from utils.roteiro import (
 )
 from utils.gerador_psd import gerar_psd_carrossel
 
+import sys
+
+# Garante stdout UTF-8 com substituição de caracteres não representáveis
+# (evita UnicodeEncodeError ao imprimir emojis em pipes/terminais cp1252)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf8", errors="replace")
 
 
 def main():
@@ -43,6 +51,15 @@ def main():
 
     )
 
+     # Instruções do mês (vindas da interface Streamlit via variável de ambiente)
+
+    instrucoes_mes = os.getenv("INSTRUCOES_DO_MES", "").strip()
+    if instrucoes_mes:
+        comando += f"\n\nObservações para este mês: {instrucoes_mes}"
+        print(f"📌 Instruções do mês aplicadas: {instrucoes_mes}")
+
+
+
     resumo = fn.consultar_IA_com_retry(vectorstore, comando)
 
     # Extrai as semanas da agenda
@@ -52,6 +69,11 @@ def main():
     if not semanas:
         print("❌ Não foram encontradas semanas no resumo. Finalizando.")
         return
+
+
+    roteiros_ok, roteiros_falhos = [], []
+
+
 
     # Passo 2 - Extrai os 3 conteúdos de cada semana e gera 1 roteiro por conteúdo
     for semana in semanas:
@@ -78,7 +100,10 @@ def main():
                 )
                 conteudo["roteiro_texto"] = roteiro_texto
                 conteudo["slides"] = slides
+                roteiros_ok.append(conteudo["numero"])
+
             except Exception as e:
+                roteiros_falhos.append(conteudo["numero"])
                 print(
                     f"⚠️ Falha ao gerar roteiro do Conteúdo {conteudo['numero']}: {e}. "
                     "Seguindo sem roteiro neste conteúdo."
@@ -205,12 +230,15 @@ def main():
         )
 
     # Passos 4 e 5 - Gera os 12 PSDs localmente (um por conteúdo)
+
+    psds_gerados, psds_falhos, uploads_falhos = [], [], []
+
     pasta_psd = os.path.join("output_psd", mes_ano)
     os.makedirs(pasta_psd, exist_ok=True)
 
     id_pasta_carrosseis = ids_subpastas.get(f"{mes_ano}-CARROSSEIS")
 
-    print("\n🎨 Gerando os 12 PSDs dos carrosséis (o Photoshop será aberto)...")
+    print("\n🎨 Gerando os PSDs dos carrosséis (o Photoshop será aberto)...")
     for semana in semanas:
         for conteudo in semana["conteudos"]:
             if not conteudo.get("slides"):
@@ -222,38 +250,66 @@ def main():
 
             # Nome sem acento, para segurança no COM do Photoshop
             nome_psd = f"Conteudo {conteudo['numero']:02d}.psd"
-            caminho_psd = os.path.join(
-                pasta_psd, nome_psd
-            )
+            caminho_psd = os.path.join(pasta_psd, nome_psd)
             try:
                 gerar_psd_carrossel(
                     slides=conteudo["slides"],
                     caminho_saida=caminho_psd,
                     titulo_documento=f"Carrossel Conteudo {conteudo['numero']}",
                 )
+                psds_gerados.append(conteudo["numero"])          
 
-                # Upload dos PSD´s para a subpasta carrosseis no Drive
+                # Upload dos PSDs para a subpasta carrosséis no Drive
                 if id_pasta_carrosseis:
-                    fn.upload_arquivo_drive(
+                    id_upload = fn.upload_arquivo_drive(          
                         service=drive_service,
                         caminho_local=caminho_psd,
                         nome_arquivo=nome_psd,
                         mime_type="application/octet-stream",
-                        id_pasta_destino=id_pasta_carrosseis
-
+                        id_pasta_destino=id_pasta_carrosseis,
                     )
-
+                    if id_upload is None:                        
+                        uploads_falhos.append(conteudo["numero"])
                 else:
                     print(
-                        f"!! Pasta '{mes_ano}-CARROSSEIS' indisponível;"
+                        f"⚠️ Pasta '{mes_ano}-CARROSSEIS' indisponível; "
                         f"PSD do Conteúdo {conteudo['numero']} salvo só localmente."
-
-                          )
+                    )
+                    uploads_falhos.append(conteudo["numero"])     
 
             except Exception as e:
                 print(f"❌ Erro ao gerar PSD do Conteúdo {conteudo['numero']}: {e}")
+                psds_falhos.append(conteudo["numero"])            
+    
 
-    print("\n🏁 Finalizado!")
+    # ---- Resumo final da execução -------
+
+    total = sum(len(s["conteudos"]) for s in semanas)
+    print(f"\n{'=' * 60}")
+    print(f"📊 RESUMO DA EXECUÇÃO ({data_hoje})")
+    print(f"{'=' * 60}")
+    print(f"Semanas publicadas: {len(semanas)}/4")
+    print(f"Roteiros gerados: {len(roteiros_ok)}/{total}"
+          + (f" | Falharam: {roteiros_falhos}" if roteiros_falhos else ""))
+    print(f"PSDs gerados: {len(psds_gerados)}/{total}"
+          + (f" | Falharam: {psds_falhos}" if psds_falhos else ""))
+    if uploads_falhos:
+        print(f"Uploads com falha: {uploads_falhos}")
+    print("=" * 60)
+
+    faltantes = {
+        "mes": mes_ano,
+        "data": data_hoje,
+        "roteiros_falhos": roteiros_falhos,
+        "psds_falhos": psds_falhos,
+        "uploads_falhos": uploads_falhos,
+    }
+    caminho_faltantes = os.path.join("output_psd", f"faltantes_{mes_ano}.json")
+    with open(caminho_faltantes, "w", encoding="utf-8") as f:
+        json.dump(faltantes, f, ensure_ascii=False, indent=2)
+    print(f"📋 Lista de faltantes salva em: {caminho_faltantes}")
+    print("🏁 Finalizado!")
+
 
 
 if __name__ == "__main__":
