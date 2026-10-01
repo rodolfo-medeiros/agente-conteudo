@@ -163,54 +163,53 @@ def conectar_google_drive():
 
 
 
+def buscar_pasta_drive(service, nome_pasta, id_pasta_pai=None):
+    """Busca uma pasta pelo nome dentro da pasta pai (retorna o ID ou None)."""
+    query = "mimeType='application/vnd.google-apps.folder' and trashed=false"
+    if id_pasta_pai:
+        query += f" and '{id_pasta_pai}' in parents"
+    query += f" and name = '{nome_pasta}'"
+    try:
+        resposta = (
+            service.files()
+            .list(q=query, fields="files(id, name)", pageSize=1)
+            .execute()
+        )
+        arquivos = resposta.get("files", [])
+        if arquivos:
+            return arquivos[0]["id"]
+    except HttpError as e:
+        print(f"Erro ao buscar pasta: {e}")
+    return None
+
+
 def criar_pasta_drive(service, nome_pasta, id_pasta_pai=None):
-    def buscar_pasta_drive(service, nome_pasta, id_pasta_pai=None):
-        """Busca uma pasta pelo nome dentro da pasta pai (retorna o ID ou None)."""
-        query = "mimeType='application/vnd.google-apps.folder' and trashed=false"
-        if id_pasta_pai:
-            query += f" and '{id_pasta_pai}' in parents"
-        query += f" and name = '{nome_pasta}'"
-        try:
-            resposta = (
-                service.files()
-                .list(q=query, fields="files(id, name)", pageSize=1)
-                .execute()
-            )
-            arquivos = resposta.get("files", [])
-            if arquivos:
-                return arquivos[0]["id"]
-        except HttpError as e:
-            print(f"Erro ao buscar pasta: {e}")
-        return None
+    """Cria uma pasta no Google Drive — ou reaproveita a existente.
 
-    """Cria uma pasta no Google Drive."""
-    print(f"Criando pasta '{nome_pasta}' no Google Drive...")
-
-
-
-    # Reaproveita a pasta se ela já existir (evita duplicatas em re-execuções)
+    Regra de idempotência: pasta de mesmo nome na mesma posição é
+    reaproveitada, evitando duplicatas em re-execuções.
+    """
     id_existente = buscar_pasta_drive(service, nome_pasta, id_pasta_pai)
     if id_existente:
         print(f"Pasta '{nome_pasta}' já existe; reaproveitando (ID: {id_existente}).")
         return id_existente
 
-
-
-    # No google Drive pastas são arquivos com mimeType específico
-    metadata_pasta = {
-        'name': nome_pasta,
-        'mimeType': 'application/vnd.google-apps.folder'
-    }
-
-    # Informado a pasta pai, a nova pasta será criada dentro dela
-    if id_pasta_pai:
-        metadata_pasta['parents'] = [id_pasta_pai]
-
+    print(f"Criando pasta '{nome_pasta}' no Google Drive...")
     try:
-        pasta = service.files().create(body=metadata_pasta, fields='id').execute()
-        id_pasta = pasta.get('id')
-        print(f"Pasta {nome_pasta} criada com sucesso! ID: {id_pasta}")
-        return id_pasta
+        pasta = (
+            service.files()
+            .create(
+                body={
+                    "name": nome_pasta,
+                    "mimeType": "application/vnd.google-apps.folder",
+                    "parents": [id_pasta_pai] if id_pasta_pai else [],
+                },
+                fields="id, webViewLink",
+            )
+            .execute()
+        )
+        print(f"Pasta {nome_pasta} criada com sucesso! ID: {pasta.get('id')}")
+        return pasta.get("id")
     except HttpError as e:
         print(f"Erro ao criar pasta: {e}")
         return None
@@ -240,6 +239,24 @@ def upload_arquivo_drive(service, caminho_local, nome_arquivo, mime_type, id_pas
         return None
 
 
+def _com_retry(fn, tentativas=3, espera=5):
+    """Repete uma chamada da API do Drive em erros transitórios (429/5xx)."""
+    import time
+    for tentativa in range(1, tentativas + 1):
+        try:
+            return fn()
+        except HttpError as e:
+            status = e.resp.status if e.resp is not None else None
+            transitorio = status in (429, 500, 502, 503, 504)
+            if not transitorio or tentativa == tentativas:
+                raise
+            print(f"⚠️ Erro transitório do Drive ({status}); tentando novamente "
+                  f"em {espera}s ({tentativa}/{tentativas})...")
+            time.sleep(espera)
+
+
+
+
 
 def criar_documento_resumo(service, nome_arquivo, conteudo_texto, id_pasta_destino):
     """Cria um documento de texto no Google Drive com o conteúdo fornecido."""
@@ -256,11 +273,11 @@ def criar_documento_resumo(service, nome_arquivo, conteudo_texto, id_pasta_desti
     media = MediaInMemoryUpload(conteudo_texto.encode('utf-8'), mimetype='text/plain')
 
     try:
-        arquivo = service.files().create(
-            body=metadata_arquivo,
-            media_body=media,
-            fields='id, webViewLink'
-        ).execute()
+        arquivo = _com_retry(
+            lambda: service.files()
+            .create(body=metadata_arquivo, media_body=media, fields="id, webViewLink")
+            .execute
+        )
 
         print(f"Arquivo salvo com sucesso")
         print(f"Link de acesso: {arquivo.get('webViewLink')}")

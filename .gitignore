@@ -17,3 +17,6 @@ Desktop.ini
 .DS_Store
 output_psd/
 debug_roteiros_com_erro.txt
+system_prompt_token.bak_*.md
+.pipeline_em_execucao.lock
+faltantes_*.json

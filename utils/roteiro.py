@@ -352,14 +352,20 @@ def gerar_roteiro_conteudo(
                     )
 
                 # Validação mínima dos campos por tipo de slide
+                # Slide 1 exige Título + Subtítulo; slides 2 a 4 exigem Texto;
+                # slide 5 exige Texto ou CTA. O 'Título:' dos slides 2 a 5 é
+                # OPCIONAL — o gerador de PSD cria um título de reserva quando
+                # o modelo o omitir.
+
+
                 faltando = [
                     s["numero"]
                     for s in slides
-                    if not s["titulo"]
-                    or (s["numero"] == 1 and not s["subtitulo"])
+                    if (s["numero"] == 1 and (not s["titulo"] or not s["subtitulo"]))
                     or (s["numero"] in (2, 3, 4) and not s["texto"])
                     or (s["numero"] == 5 and not (s["texto"] or s["cta"]))
-                ]
+            ]
+                
                 if faltando:
                     motivo = f"campos faltando nos slides {faltando}"
                     _registrar_erro_formato(numero_conteudo, resposta_bruta, motivo)

@@ -15,6 +15,7 @@ Nota sobre enums (photoshop-python-api 0.24.x):
 """
 
 import os
+import re
 
 import photoshop.api as ps
 from photoshop.api.errors import PhotoshopPythonAPIError
@@ -59,12 +60,17 @@ def gerar_psd_carrossel(slides, caminho_saida, titulo_documento="Carrossel Insta
     caminho_saida = os.path.abspath(caminho_saida)
     os.makedirs(os.path.dirname(caminho_saida), exist_ok=True)
 
+    print("🧩 Conectando ao Photoshop via COM...")
     try:
         app = ps.Application()
-    except (PhotoshopPythonAPIError, Exception) as e:
+    except Exception as e:
+        import traceback
+        print("ERRO REAL ao iniciar o Photoshop via COM:")
+        traceback.print_exc()
+
         raise RuntimeError(
-            "Não foi possível iniciar o Photoshop via COM. Verifique se o "
-            "Adobe Photoshop está instalado/licenciado nesta máquina."
+            f"Não foi possível iniciar o Photoshop via COM ({e!r}). "
+            "Veja o erro detalhado acima no log."
         ) from e
 
     # Posições, guias e seleções usam as unidades de régua (pixels).
@@ -159,26 +165,57 @@ def _preencher_fundo(doc, grupo, x0):
     doc.selection.deselect()
 
 
-def _blocos_texto(slide):
-    """Define os blocos de texto de cada tipo de slide.
 
-    Retorna lista de (nome_da_camada, conteudo, estilo, altura_da_caixa).
+def _titulo_de_reserva(slide):
+    """Título de reserva quando o modelo não entregou 'Título:' no slide.
+    Usa a primeira frase do texto (encurtada) para o quadrante não ficar
+    sem headline; o designer ajusta depois no Photoshop.
     """
+
+    titulo = (slide.get("titulo") or "").strip()
+    if titulo:
+        return titulo
+
+    texto = (slide.get("texto") or "").strip()
+    if not texto:
+        return ""
+
+    primeira = re.split(r"(?<=[.!?])\s+", texto)[0].strip()
+    if len(primeira) > 90:
+        primeira = primeira[:87].rstrip() + "..."
+    return primeira
+
+
+def _blocos_texto(slide):
+    """Define os blocos de texto de cada tipo de slide."""
     blocos = []
+    titulo = _titulo_de_reserva(slide)
     if slide["numero"] == 1:
-        blocos.append(("Titulo", slide.get("titulo", ""), ESTILOS["titulo_1"], 520))
-        blocos.append(
-            ("Subtitulo", slide.get("subtitulo", ""), ESTILOS["subtitulo"], 480)
-        )
+        blocos.append(("Titulo", titulo, ESTILOS["titulo_1"],520))
+        blocos.append(("Subtitulo", slide.get("subtitulo"),"")),
     else:
         if slide.get("rotulo"):
-            blocos.append(("Rotulo", slide["rotulo"], ESTILOS["rotulo"], 60))
-        blocos.append(("Titulo", slide.get("titulo", ""), ESTILOS["titulo"], 300))
-        if slide.get("texto"):
-            blocos.append(("Texto", slide["texto"], ESTILOS["texto"], 560))
+            blocos.append(("Rotulo", slide["texto"], ESTILOS["texto"], 560))
         if slide.get("cta"):
-            blocos.append(("CTA", slide["cta"], ESTILOS["cta"], 180))
+            blocos.append(("CTA", slide["cta"], ESTILOS["cta"],180))
     return blocos
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def _adicionar_camada_texto(grupo, nome, conteudo, estilo, x, y, altura):
