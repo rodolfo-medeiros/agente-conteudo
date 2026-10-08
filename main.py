@@ -25,9 +25,23 @@ def main():
     knowledge_base_folder = "knowledge_base"
 
     today = date.today()
-    year_month = today.strftime("%Y/%m")
-    mes_ano = today.strftime("%m-%Y")
     data_hoje = datetime.now().strftime("%Y-%m-%d")
+
+    # Mês da agenda (padrão: mês corrente). Para gerar outro mês, defina a
+    # variável de ambiente MES_AGENDA no formato MM-AAAA (ex.: MES_AGENDA=10-2026).
+    mes_agenda = os.getenv("MES_AGENDA", "").strip()
+    if mes_agenda:
+        match = re.fullmatch(r"(\d{2})-(\d{4})", mes_agenda)
+        if not match:
+            raise SystemExit(
+                "❌ MES_AGENDA inválido. Use o formato MM-AAAA (ex.: 10-2026)."
+            )
+        mes_ano = mes_agenda
+        year_month = f"{match.group(2)}/{match.group(1)}"
+        print(f"📌 Mês da agenda definido manualmente: {mes_ano}")
+    else:
+        mes_ano = today.strftime("%m-%Y")
+        year_month = today.strftime("%Y/%m")
 
 
     # Passo 1 - Processa o pdf e gera resumo via gemini (fluxo original)

@@ -165,7 +165,7 @@ def preview_sincronizacao():
 # Execução do pipeline (subprocesso + leitor em thread)
 # ---------------------------------------------------------------------------
 
-def iniciar_pipeline(instrucoes_mes):
+def iniciar_pipeline(instrucoes_mes="", mes_agenda=""):
     """Dispara o main.py em subprocesso e devolve (processo, leitor de log)."""
     if pipeline_em_execucao():
         return None, "Já existe uma execução em andamento."
@@ -176,6 +176,8 @@ def iniciar_pipeline(instrucoes_mes):
     env["PYTHONUNBUFFERED"] = "1"            # modo UTF-8 global do Python filho
     if instrucoes_mes.strip():
         env["INSTRUCOES_DO_MES"] = instrucoes_mes.strip()
+    if mes_agenda.strip():
+        env["MES_AGENDA"] = mes_agenda.strip()
 
 
     processo = subprocess.Popen(
@@ -237,7 +239,7 @@ if aba == "📚 Base de conhecimento":
 
     st.subheader("Arquivos")
     if not pdfs:
-        st.into("Nenhum pdf na abse. Envie pelo menos um.")
+        st.info("Nenhum PDF na base. Envie pelo menos um.")
     for pdf in pdfs:
         col_a, col_b = st.columns([4,1])
         col_a.write(f"📄 **{pdf.name}** — {pdf.stat().st_size / 1024:.0f} KB")
@@ -287,14 +289,15 @@ elif aba == "📝 Instruções":
 
             )
         else:
-            backup = RAIZ / (
+            pasta_backup = RAIZ / "backups"
+            pasta_backup.mkdir(exist_ok=True)
+            backup = pasta_backup / (
                 "system_prompt_token.bak_"
                 + datetime.now().strftime("%Y-%m-%d-%H%M") + ".md"
-
             )
-            shutil.copy2(ARQ_PROMPT,backup)
+            shutil.copy2(ARQ_PROMPT, backup)
             ARQ_PROMPT.write_text(texto, encoding="utf-8")
-            st.success(f"Salvo! Backup anterior em `{backup.name}`.")
+            st.success(f"Salvo! Backup anterior em `backups/{backup.name}`.")
 
 
 
@@ -315,11 +318,15 @@ elif aba == "▶️ Agente":
         height=90,
 
     )
+    mes_manual = st.text_input(
+        "🗓️ Mês da agenda (opcional)",
+        placeholder="MM-AAAA — vazio = mês corrente (ex.: 10-2026)",
+    )
 
     col_play, col_status = st.columns([1,3])
     if col_play.button("▶️ GERAR AGENDA DO MÊS", type="primary",
                         disabled=pipeline_em_execucao()):
-        processo, resultado = iniciar_pipeline(instrucoes_mes)
+        processo, resultado = iniciar_pipeline(instrucoes_mes, mes_manual)
         if processo is None:
             col_status.error(resultado)
         else:

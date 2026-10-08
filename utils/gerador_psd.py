@@ -187,17 +187,23 @@ def _titulo_de_reserva(slide):
 
 
 def _blocos_texto(slide):
-    """Define os blocos de texto de cada tipo de slide."""
+    """Define os blocos de texto de cada tipo de slide.
+
+    Retorna lista de (nome_da_camada, conteudo, estilo, altura_da_caixa).
+    """
     blocos = []
     titulo = _titulo_de_reserva(slide)
     if slide["numero"] == 1:
-        blocos.append(("Titulo", titulo, ESTILOS["titulo_1"],520))
-        blocos.append(("Subtitulo", slide.get("subtitulo"),"")),
+        blocos.append(("Titulo", titulo, ESTILOS["titulo_1"], 520))
+        blocos.append(("Subtitulo", slide.get("subtitulo", ""), ESTILOS["subtitulo"], 480))
     else:
         if slide.get("rotulo"):
-            blocos.append(("Rotulo", slide["texto"], ESTILOS["texto"], 560))
+            blocos.append(("Rotulo", slide["rotulo"], ESTILOS["rotulo"], 60))
+        blocos.append(("Titulo", titulo, ESTILOS["titulo"], 300))
+        if slide.get("texto"):
+            blocos.append(("Texto", slide["texto"], ESTILOS["texto"], 560))
         if slide.get("cta"):
-            blocos.append(("CTA", slide["cta"], ESTILOS["cta"],180))
+            blocos.append(("CTA", slide["cta"], ESTILOS["cta"], 180))
     return blocos
 
 

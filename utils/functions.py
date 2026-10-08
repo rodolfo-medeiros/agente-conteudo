@@ -226,11 +226,13 @@ def upload_arquivo_drive(service, caminho_local, nome_arquivo, mime_type, id_pas
     media = MediaFileUpload(caminho_local, mimetype=mime_type, resumable=False)
 
     try:
-        arquivo = service.files().create(
-            body=metadata_arquivo,
-            media_body=media,
-            fields='id, webViewLink'
-        ).execute()
+        arquivo = _com_retry(
+            lambda: service.files().create(
+                body=metadata_arquivo,
+                media_body=media,
+                fields='id, webViewLink'
+            ).execute()
+        )
         print(f"Arquivo '{nome_arquivo}' enviado com sucesso!")
         print(f"Link de acesso: {arquivo.get('webViewLink')}")
         return arquivo.get('id')
@@ -276,7 +278,7 @@ def criar_documento_resumo(service, nome_arquivo, conteudo_texto, id_pasta_desti
         arquivo = _com_retry(
             lambda: service.files()
             .create(body=metadata_arquivo, media_body=media, fields="id, webViewLink")
-            .execute
+            .execute()
         )
 
         print(f"Arquivo salvo com sucesso")
