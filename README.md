@@ -77,11 +77,15 @@ finalização do design dos PSDs no Photoshop.
 
 ## 🚀 Como rodar
 
+> 🧑‍💻 **Instalando em uma máquina nova / usuário novo?** Siga o **`ONBOARDING.md`**
+> — o `setup.bat` traz um Python portátil e instala tudo automaticamente,
+> sem interferir com o Python da máquina.
+
 ### 1. Pré-requisitos
 
 - **Windows** + **Adobe Photoshop instalado e licenciado** (testado na v27.10 —
   a versão é detectada automaticamente pelo registro)
-- Python 3.9+
+- Python 3.9+ *(opcional — o `setup.bat` do `ONBOARDING.md` traz um Python portátil)*
 - Chave da **API do Gemini** e pasta no **Google Drive** para a saída
 
 ### 2. Instalação

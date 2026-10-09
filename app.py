@@ -24,7 +24,8 @@ RAIZ = Path(__file__).parent
 PASTA_KB = RAIZ / "knowledge_base"
 ARQ_PROMPT = RAIZ / "system_prompt_token.md"
 ARQ_ENV = RAIZ / ".env"
-PYTHON = RAIZ / "venv" / "Scripts" / "python.exe"
+# Mesmo interpretador que roda o painel (funciona com venv\ ou runtime\ portátil)
+PYTHON = Path(sys.executable)
 LOCKFILE = RAIZ / ".pipeline_em_execucao.lock"
 _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 _STILL_ACTIVE = 259

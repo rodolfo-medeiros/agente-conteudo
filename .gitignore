@@ -6,6 +6,9 @@ oauth_credentials.json
 venv/
 __pycache__
 resumo_IA_*.txt
+runtime/
+python_embed.zip
+get-pip.py
 chroma_db_gemini/
 system_prompt_token.md
 knowledge_base/
